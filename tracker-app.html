@@ -2,6 +2,7 @@
 <title>Daily & Hourly Tracker</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<script src="https://accounts.google.com/gsi/client" async defer></script>
 <style>
   :root {
     --bg: #f8fafc;
@@ -936,13 +937,22 @@
       <p style="color:var(--text-muted); font-size:13px;">
         Connect your Google Sheet via Google OAuth2 or paste your Google Sheets API Web App URL (from Apps Script Code.gs) to sync your tracker in real time.
       </p>
-      <div class="form-group">
-        <label>Google Apps Script Web App URL (Recommended)</label>
-        <input type="text" id="gs-webapp-url" placeholder="https://script.google.com/macros/s/.../exec">
+
+      <div class="form-group" style="background: var(--surface-alt); padding: 14px; border-radius: 8px; border: 1px solid var(--border);">
+        <label style="font-weight:700; color:var(--primary); margin-bottom:6px;">🚀 1-Click Automated Provisioning (Recommended)</label>
+        <p style="color:var(--text-muted); font-size:12px; margin-bottom:10px;">
+          Enter your Google Cloud OAuth2 Client ID below, then click sign in to automatically create your Google Sheet and deploy the Apps Script backend instantly.
+        </p>
+        <div class="form-group" style="margin-bottom:10px;">
+          <label>Google OAuth Client ID</label>
+          <input type="text" id="gs-client-id" placeholder="e.g. 123456-abc.apps.googleusercontent.com">
+        </div>
+        <button class="btn btn-primary" onclick="startGoogleAutoProvision()" style="width:100%; justify-content:center;">Sign in & Auto-Provision Sheet & Script</button>
       </div>
+
       <div class="form-group">
-        <label>Or Google Sheet ID</label>
-        <input type="text" id="gs-sheet-id" placeholder="1BxiMVs0XRA5nFMdKvBdBZjgmUUqptlbs74OgvE2upms">
+        <label>Google Apps Script Web App URL</label>
+        <input type="text" id="gs-webapp-url" placeholder="https://script.google.com/macros/s/.../exec">
       </div>
       <div style="display:flex; gap:10px; margin-top:8px; flex-wrap:wrap;">
         <button class="btn btn-success" onclick="connectGoogleSheets()">Connect & Sync</button>
@@ -999,6 +1009,186 @@
     url: '',
     connected: false
   };
+
+  const CODE_GS_SOURCE = `/**
+ * Daily & Hourly Tracker — Comprehensive Google Apps Script Automation
+ */
+function doGet(e) {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var logSheet = ss.getSheetByName('Master_Log');
+  if (!logSheet) { setupMasterLogTracker(); ss = SpreadsheetApp.getActiveSpreadsheet(); logSheet = ss.getSheetByName('Master_Log'); }
+  var rows = logSheet.getDataRange().getValues();
+  rows.shift();
+  var timeZone = Session.getScriptTimeZone();
+  var data = rows.map(function(r, index) {
+    return {
+      id: index + 1,
+      rowIndex: index + 2,
+      date: r[0] ? Utilities.formatDate(new Date(r[0]), timeZone, "yyyy-MM-dd") : '',
+      taskName: r[1] || '',
+      category: r[2] || '',
+      timeBlock: r[3] || '',
+      priority: r[4] || '',
+      planned: r[5] || 1,
+      actual: r[6] || 1,
+      stakeholder: r[7] || '',
+      status: r[8] || 'In Progress',
+      progress: r[9] || 0,
+      nextUpdate: r[10] ? Utilities.formatDate(new Date(r[10]), timeZone, "yyyy-MM-dd") : '',
+      followUp: r[11] || 'No',
+      timeSlot: r[12] || '',
+      notes: r[13] || ''
+    };
+  });
+  return ContentService.createTextOutput(JSON.stringify({ status: 'success', data: data })).setMimeType(ContentService.MimeType.JSON);
+}
+
+function doPost(e) {
+  try {
+    var ss = SpreadsheetApp.getActiveSpreadsheet();
+    var logSheet = ss.getSheetByName('Master_Log');
+    if (!logSheet) { setupMasterLogTracker(); logSheet = ss.getSheetByName('Master_Log'); }
+    var payload = JSON.parse(e.postData.contents);
+    if (payload.action === 'delete') {
+      var rowIndex = payload.rowIndex;
+      var lastRow = logSheet.getLastRow();
+      if (rowIndex && rowIndex >= 2 && rowIndex <= lastRow) {
+        logSheet.deleteRow(rowIndex);
+        return ContentService.createTextOutput(JSON.stringify({ status: 'success', message: 'Row deleted' })).setMimeType(ContentService.MimeType.JSON);
+      }
+      var targetTask = payload.taskName;
+      var targetDate = payload.date;
+      var dataRange = logSheet.getDataRange().getValues();
+      var timeZone = Session.getScriptTimeZone();
+      for (var i = 1; i < dataRange.length; i++) {
+        var rowDate = dataRange[i][0] ? Utilities.formatDate(new Date(dataRange[i][0]), timeZone, "yyyy-MM-dd") : '';
+        var rowTask = dataRange[i][1] || '';
+        if (rowTask === targetTask && (!targetDate || rowDate === targetDate)) {
+          logSheet.deleteRow(i + 1);
+          return ContentService.createTextOutput(JSON.stringify({ status: 'success', message: 'Row deleted' })).setMimeType(ContentService.MimeType.JSON);
+        }
+      }
+      return ContentService.createTextOutput(JSON.stringify({ status: 'error', message: 'Row not found' })).setMimeType(ContentService.MimeType.JSON);
+    }
+    logSheet.appendRow([
+      payload.date || new Date(),
+      payload.taskName || '',
+      payload.category || 'Deep Work',
+      payload.timeBlock || '09:00 AM - 10:00 AM',
+      payload.priority || 'High',
+      payload.planned || 1.0,
+      payload.actual !== undefined ? payload.actual : '=IF(ISBLANK(D' + (logSheet.getLastRow() + 1) + '), 0, 1)',
+      payload.stakeholder || 'Internal',
+      payload.status || 'In Progress',
+      payload.progress || 0,
+      payload.nextUpdate || '',
+      payload.followUp || 'No',
+      payload.timeSlot || '10:00 AM',
+      payload.notes || ''
+    ]);
+    return ContentService.createTextOutput(JSON.stringify({ status: 'success', message: 'Appended' })).setMimeType(ContentService.MimeType.JSON);
+  } catch(err) {
+    return ContentService.createTextOutput(JSON.stringify({ status: 'error', message: err.toString() })).setMimeType(ContentService.MimeType.JSON);
+  }
+}
+
+function setupMasterLogTracker() {
+  var ss = SpreadsheetApp.getActiveSpreadsheet();
+  var sheetNames = ['Master_Log', 'Dashboard & Summary', 'Date-Wise View', 'Task-Wise View', 'Stakeholder-Wise View', 'Master Progress View', 'Timeline View'];
+  sheetNames.forEach(function(name) { if (!ss.getSheetByName(name)) ss.insertSheet(name); });
+  var logSheet = ss.getSheetByName('Master_Log');
+  logSheet.clear();
+  var logHeaders = ['Date', 'Task Name', 'Category', 'Time Block', 'Priority', 'Planned (Hrs)', 'Actual (Hrs - Auto)', 'Stakeholder', 'Status', 'Progress (%)', 'Next Update Expected', 'Follow-Up Required?', 'Follow-Up Date & Time', 'Daily Update / Notes'];
+  logSheet.getRange(1, 1, 1, logHeaders.length).setValues([logHeaders]);
+  var sampleRow = [new Date(), 'Architecture Blueprint Review', 'Deep Work', '09:00 AM - 10:00 AM', 'High', 2.0, '=IF(ISBLANK(D2), 0, 1)', 'Internal Team', 'In Progress', 50, new Date(new Date().getTime() + 86400000), 'Yes', '02:00 PM', 'Initial draft complete and reviewed.'];
+  logSheet.getRange(2, 1, 1, sampleRow.length).setValues([sampleRow]);
+}
+`;
+
+  function startGoogleAutoProvision() {
+    const clientId = document.getElementById('gs-client-id').value.trim();
+    if (!clientId) {
+      showToast('Please enter your Google OAuth Client ID');
+      return;
+    }
+    localStorage.setItem('productivity_tracker_client_id', clientId);
+
+    if (typeof google === 'undefined' || !google.accounts) {
+      showToast('Google Identity Services script is loading. Please try again in a moment.');
+      return;
+    }
+
+    const client = google.accounts.oauth2.initTokenClient({
+      client_id: clientId,
+      scope: 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/script.projects https://www.googleapis.com/auth/drive.file',
+      callback: async (response) => {
+        if (response.error) {
+          showToast('OAuth Error: ' + response.error);
+          return;
+        }
+        if (response.access_token) {
+          await autoProvisionWorkbook(response.access_token);
+        }
+      }
+    });
+    client.requestAccessToken();
+  }
+
+  async function autoProvisionWorkbook(token) {
+    showToast('Creating your personal Google Sheet...');
+    try {
+      const sheetRes = await fetch('https://sheets.googleapis.com/v4/spreadsheets', {
+        method: 'POST',
+        headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ properties: { title: 'Daily & Hourly Tracker (SSOT)' } })
+      });
+      const sheetData = await sheetRes.json();
+      if (!sheetData.spreadsheetId) throw new Error('Failed to create Google Sheet');
+      const spreadsheetId = sheetData.spreadsheetId;
+
+      showToast('Creating Apps Script backend project...');
+      const scriptRes = await fetch('https://script.googleapis.com/v1/projects', {
+        method: 'POST',
+        headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ title: 'Daily Tracker Backend', parentId: spreadsheetId })
+      });
+      const scriptData = await scriptRes.json();
+      if (!scriptData.scriptId) throw new Error('Failed to create Apps Script project');
+      const scriptId = scriptData.scriptId;
+
+      showToast('Pushing Apps Script automation code...');
+      await fetch(`https://script.googleapis.com/v1/projects/${scriptId}/content`, {
+        method: 'PUT',
+        headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          files: [
+            { name: 'Code.gs', type: 'SERVER_JS', source: CODE_GS_SOURCE },
+            { name: 'appsscript', type: 'JSON', source: JSON.stringify({ timeZone: "America/New_York", dependencies: {}, exceptionLogging: "STACKDRIVER", runtimeVersion: "V8" }) }
+          ]
+        })
+      });
+
+      showToast('Deploying Web App API endpoint...');
+      const deployRes = await fetch(`https://script.googleapis.com/v1/projects/${scriptId}/deployments`, {
+        method: 'POST',
+        headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ manifestFileName: 'appsscript', description: 'Web App Sync Deployment' })
+      });
+      const deployData = await deployRes.json();
+      const webAppUrl = deployData.entryPoint?.webApp?.url || `https://script.google.com/macros/s/${scriptId}/exec`;
+
+      googleSheetsConfig = { url: webAppUrl, spreadsheetId: spreadsheetId, connected: true };
+      saveToStorage();
+      document.getElementById('gs-webapp-url').value = webAppUrl;
+      document.getElementById('sync-status-text').textContent = 'Mode: Connected to Google Sheets (Auto-Provisioned)';
+      closeSheetsModal();
+      showToast('Success! Google Sheet & Web App created automatically.');
+      fetchFromGoogleSheets();
+    } catch (err) {
+      console.error('Auto-provision error:', err);
+      showToast('Auto-provision failed: ' + err.message);
+    }
+  }
 
   async function syncToGoogleSheets(task) {
     if (!googleSheetsConfig.connected || !googleSheetsConfig.url) return;
@@ -1205,6 +1395,10 @@
 
   function openGoogleSheetsModal() {
     document.getElementById('gs-webapp-url').value = googleSheetsConfig.url || '';
+    const savedClientId = localStorage.getItem('productivity_tracker_client_id') || '';
+    if (document.getElementById('gs-client-id')) {
+      document.getElementById('gs-client-id').value = savedClientId;
+    }
     document.getElementById('sheets-modal').classList.add('open');
   }
 
