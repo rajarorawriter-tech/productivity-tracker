@@ -928,33 +928,39 @@
 
 <!-- Google Sheets Connection Modal -->
 <div class="modal-overlay" id="sheets-modal">
-  <div class="modal" style="max-width: 550px;">
+  <div class="modal" style="max-width: 600px;">
     <div class="modal-header">
-      <h3 class="modal-title">Connect Google Sheets Backend</h3>
+      <h3 class="modal-title">Google Sheets Backend Provisioning</h3>
       <button class="close-btn" onclick="closeSheetsModal()">&times;</button>
     </div>
     <div style="display:flex; flex-direction:column; gap:16px;">
       <p style="color:var(--text-muted); font-size:13px;">
-        Connect your Google Sheets backend in 3 simple steps for seamless live synchronization and Single Source of Truth (SSOT) tracking.
+        Choose 1-Click Auto-Provisioning to instantly create your personal Google Sheet and populate your Apps Script editor, or connect via an existing Web App URL.
       </p>
 
-      <div style="background: var(--surface-alt); padding: 16px; border-radius: 8px; border: 1px solid var(--border); display: flex; flex-direction: column; gap: 8px; font-size: 12px; color: var(--text);">
-        <strong>Quick Setup Guide:</strong>
-        <ol style="padding-left: 18px; display: flex; flexDirection: column; gap: 4px; color: var(--text-muted);">
-          <li>Create a new <a href="https://sheets.google.com" target="_blank" style="color: var(--primary);">Google Sheet</a>.</li>
-          <li>Go to <strong style="color: var(--text);">Extensions > Apps Script</strong>, paste the contents of <code style="background:var(--border); padding:2px 4px; border-radius:4px;">Code.gs</code>, and click Save.</li>
-          <li>Click <strong style="color: var(--text);">Deploy > New deployment</strong> (Select type: <strong>Web app</strong>, Execute as: <strong>Me</strong>, Who has access: <strong>Anyone</strong>), authorize, and copy the <strong>Web App URL</strong>.</li>
-        </ol>
+      <div style="background: var(--surface-alt); padding: 18px; border-radius: 8px; border: 1px solid var(--border); display: flex; flex-direction: column; gap: 12px;">
+        <h4 style="font-size: 14px; font-weight: 700; color: var(--text);">Option 1: 1-Click Automated Setup (Recommended)</h4>
+        <p style="color: var(--text-muted); font-size: 12px;">
+          Automatically creates your private Google Sheet, sets up the Apps Script backend, pushes all automation code (`Code.gs`), and opens both tabs for you in under 2 seconds!
+        </p>
+        <button class="btn btn-primary" onclick="startGoogleAutoProvision()" style="width:100%; justify-content:center; padding: 12px; font-size: 13px;">
+          Sign in with Google & Provision Backend
+        </button>
       </div>
 
-      <div class="form-group">
-        <label>Apps Script Web App URL</label>
-        <input type="text" id="gs-webapp-url" placeholder="https://script.google.com/macros/s/.../exec">
-      </div>
-
-      <div style="display:flex; gap:10px; flex-wrap:wrap;">
-        <button class="btn btn-success" onclick="connectGoogleSheets()" style="flex:1; justify-content:center; padding: 10px; font-size: 13px;">Connect & Sync</button>
-        <button class="btn btn-secondary" onclick="disconnectGoogleSheets()" style="padding: 10px; font-size: 13px;">Disconnect</button>
+      <div style="background: var(--surface-alt); padding: 18px; border-radius: 8px; border: 1px solid var(--border); display: flex; flex-direction: column; gap: 10px;">
+        <h4 style="font-size: 14px; font-weight: 700; color: var(--text);">Option 2: Connect Existing Web App URL</h4>
+        <p style="color: var(--text-muted); font-size: 12px;">
+          In your opened Apps Script editor: Click <strong>Deploy > New deployment</strong> -> Select type: <strong>Web app</strong> -> Execute as: <strong>Me</strong> -> Who has access: <strong>Anyone</strong> -> Copy the Web App URL and paste below:
+        </p>
+        <div class="form-group" style="margin-bottom: 0;">
+          <label>Apps Script Web App URL</label>
+          <input type="text" id="gs-webapp-url" placeholder="https://script.google.com/macros/s/.../exec">
+        </div>
+        <div style="display:flex; gap:10px; margin-top: 6px;">
+          <button class="btn btn-success" onclick="connectGoogleSheets()" style="flex:1; justify-content:center; padding: 10px; font-size: 13px;">Connect & Sync</button>
+          <button class="btn btn-secondary" onclick="disconnectGoogleSheets()" style="padding: 10px; font-size: 13px;">Disconnect</button>
+        </div>
       </div>
     </div>
     <div class="modal-footer">
@@ -1169,7 +1175,7 @@ function setupMasterLogTracker() {
       const scriptData = await scriptRes.json();
       const scriptId = scriptData.scriptId;
 
-      showToast('Pushing Apps Script automation code...');
+      showToast('Pushing automation code to your Apps Script editor...');
       const appScriptManifest = {
         timeZone: "America/New_York",
         dependencies: {},
@@ -1196,45 +1202,14 @@ function setupMasterLogTracker() {
         throw new Error('Apps Script API Error (Code push): ' + errText);
       }
 
-      showToast('Creating Apps Script version...');
-      const verRes = await fetch(`https://script.googleapis.com/v1/projects/${scriptId}/versions`, {
-        method: 'POST',
-        headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ description: 'v1' })
-      });
-      if (!verRes.ok) {
-        const errText = await verRes.text();
-        throw new Error('Apps Script API Error (Version creation): ' + errText);
-      }
-      const verData = await verRes.json();
-      const versionNumber = verData.versionNumber || 1;
+      showToast('Success! Opening your Google Sheet & Apps Script editor...');
 
-      showToast('Deploying Web App automatically...');
-      let deployRes = await fetch(`https://script.googleapis.com/v1/projects/${scriptId}/deployments`, {
-        method: 'POST',
-        headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          versionNumber: versionNumber,
-          manifestFileName: 'appsscript',
-          description: 'Web App Auto Deployment v1'
-        })
-      });
-      if (!deployRes.ok) {
-        deployRes = await fetch(`https://script.googleapis.com/v1/projects/${scriptId}/deployments`, {
-          method: 'POST',
-          headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
-          body: JSON.stringify({
-            versionNumber: versionNumber,
-            description: 'Web App Auto Deployment v1'
-          })
-        });
-      }
-      if (!deployRes.ok) {
-        const errText = await deployRes.text();
-        throw new Error('Apps Script API Error (Deployment): ' + errText);
-      }
-      const deployData = await deployRes.json();
-      const webAppUrl = deployData.entryPoint?.webApp?.url || `https://script.google.com/macros/s/${scriptId}/exec`;
+      // Open both tabs automatically
+      window.open(sheetUrl, '_blank');
+      const scriptEditorUrl = `https://script.google.com/home/projects/${scriptId}/edit`;
+      window.open(scriptEditorUrl, '_blank');
+
+      alert('Success! Your Google Sheet and Apps Script project were created & Code.gs was pushed automatically.\n\nTwo tabs have opened:\n1. Your new Google Sheet\n2. Your Apps Script editor\n\nIn your Apps Script editor:\n- Click Deploy > New deployment\n- Select type: Web app\n- Execute as: Me, Who has access: Anyone\n- Copy the Web App URL and paste it into the connection box.');
 
       googleSheetsConfig = { url: webAppUrl, spreadsheetId: spreadsheetId, connected: true };
       saveToStorage();
