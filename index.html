@@ -1126,7 +1126,7 @@ function setupMasterLogTracker() {
     try {
       const client = google.accounts.oauth2.initTokenClient({
         client_id: clientId,
-        scope: 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/script.projects https://www.googleapis.com/auth/drive.file',
+        scope: 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/script.projects https://www.googleapis.com/auth/script.deployments https://www.googleapis.com/auth/drive.file',
         callback: async (response) => {
           if (response.error) {
             alert('Google OAuth Error / Refusal: ' + JSON.stringify(response));
@@ -1215,7 +1215,7 @@ function setupMasterLogTracker() {
       const versionNumber = verData.versionNumber || 1;
 
       showToast('Deploying Web App automatically...');
-      const deployRes = await fetch(`https://script.googleapis.com/v1/projects/${scriptId}/deployments`, {
+      let deployRes = await fetch(`https://script.googleapis.com/v1/projects/${scriptId}/deployments`, {
         method: 'POST',
         headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1224,6 +1224,16 @@ function setupMasterLogTracker() {
           description: 'Web App Auto Deployment v1'
         })
       });
+      if (!deployRes.ok) {
+        deployRes = await fetch(`https://script.googleapis.com/v1/projects/${scriptId}/deployments`, {
+          method: 'POST',
+          headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            versionNumber: versionNumber,
+            description: 'Web App Auto Deployment v1'
+          })
+        });
+      }
       if (!deployRes.ok) {
         const errText = await deployRes.text();
         throw new Error('Apps Script API Error (Deployment): ' + errText);
