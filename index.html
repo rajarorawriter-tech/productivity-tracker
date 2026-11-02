@@ -1220,7 +1220,19 @@ function setupMasterLogTracker() {
     showToast('Syncing from Google Sheets...');
     try {
       const res = await fetch(googleSheetsConfig.url);
-      const json = await res.json();
+      const text = await res.text();
+      let json;
+      try {
+        json = JSON.parse(text);
+      } catch (parseErr) {
+        if (text.includes('<!DOCTYPE html>') || text.includes('<html')) {
+          showToast('Google Authorization Required: Opening Apps Script to authorize...');
+          window.open(googleSheetsConfig.url.replace('/exec', '/edit'), '_blank');
+          return;
+        }
+        throw parseErr;
+      }
+
       if (json.status === 'success' && Array.isArray(json.data)) {
         masterLogData = json.data;
         saveToStorage();
