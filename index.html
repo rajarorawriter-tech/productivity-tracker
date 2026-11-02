@@ -1162,24 +1162,60 @@ function setupMasterLogTracker() {
       if (!scriptData.scriptId) throw new Error('Failed to create Apps Script project');
       const scriptId = scriptData.scriptId;
 
-      showToast('Pushing Apps Script automation code...');
+      showToast('Pushing Apps Script automation code & web app config...');
+      const appScriptManifest = {
+        timeZone: "America/New_York",
+        dependencies: {},
+        webapp: {
+          executeAs: "USER_DEPLOYING",
+          access: "ANYONE"
+        },
+        exceptionLogging: "STACKDRIVER",
+        runtimeVersion: "V8"
+      };
+
       await fetch(`https://script.googleapis.com/v1/projects/${scriptId}/content`, {
         method: 'PUT',
         headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
         body: JSON.stringify({
           files: [
             { name: 'Code.gs', type: 'SERVER_JS', source: CODE_GS_SOURCE },
-            { name: 'appsscript', type: 'JSON', source: JSON.stringify({ timeZone: "America/New_York", dependencies: {}, exceptionLogging: "STACKDRIVER", runtimeVersion: "V8" }) }
+            { name: 'appsscript', type: 'JSON', source: JSON.stringify(appScriptManifest) }
           ]
         })
       });
 
-      showToast('Success! Opening your spreadsheet & script...');
-      window.open(sheetUrl, '_blank');
-      const scriptEditorUrl = `https://script.google.com/home/projects/${scriptId}/edit`;
-      window.open(scriptEditorUrl, '_blank');
+      showToast('Creating Apps Script version...');
+      const verRes = await fetch(`https://script.googleapis.com/v1/projects/${scriptId}/versions`, {
+        method: 'POST',
+        headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ description: 'v1' })
+      });
+      const verData = await verRes.json();
+      const versionNumber = verData.versionNumber || 1;
 
-      alert('Your private Google Sheet and Apps Script have been created automatically in your Google Drive!\n\nTwo tabs have opened:\n1. Your new Google Sheet\n2. Your Apps Script editor\n\nIn the Apps Script editor, simply click:\n1. Deploy > New deployment\n2. Select type: Web app\n3. Execute as: Me, Who has access: Anyone\n4. Copy the Web App URL and paste it into the connection box.');
+      showToast('Deploying Web App automatically...');
+      const deployRes = await fetch(`https://script.googleapis.com/v1/projects/${scriptId}/deployments`, {
+        method: 'POST',
+        headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          versionNumber: versionNumber,
+          manifestFileName: 'appsscript',
+          description: 'Web App Auto Deployment v1'
+        })
+      });
+      const deployData = await deployRes.json();
+      const webAppUrl = deployData.entryPoint?.webApp?.url || `https://script.google.com/macros/s/${scriptId}/exec`;
+
+      googleSheetsConfig = { url: webAppUrl, spreadsheetId: spreadsheetId, connected: true };
+      saveToStorage();
+      document.getElementById('gs-webapp-url').value = webAppUrl;
+      document.getElementById('sync-status-text').textContent = 'Mode: Connected to Google Sheets (Fully Automated)';
+      closeSheetsModal();
+      showToast('Success! Google Sheet & Web App created & deployed automatically.');
+
+      window.open(sheetUrl, '_blank');
+      fetchFromGoogleSheets();
 
     } catch (err) {
       console.error('Auto-provision error:', err);
