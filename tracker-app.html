@@ -949,14 +949,10 @@
       </div>
 
       <details style="border: 1px solid var(--border); border-radius: 8px; padding: 10px 14px; background: var(--surface);">
-        <summary style="cursor: pointer; font-size: 12px; font-weight: 600; color: var(--text-muted);">Advanced Settings (Client ID / Web App URL)</summary>
+        <summary style="cursor: pointer; font-size: 12px; font-weight: 600; color: var(--text-muted);">Advanced Settings (Web App URL)</summary>
         <div style="display: flex; flex-direction: column; gap: 10px; margin-top: 10px;">
           <div class="form-group">
-            <label>Google OAuth Client ID</label>
-            <input type="text" id="gs-client-id" placeholder="e.g. 123456-abc.apps.googleusercontent.com">
-          </div>
-          <div class="form-group">
-            <label>Or Web App URL</label>
+            <label>Web App URL</label>
             <input type="text" id="gs-webapp-url" placeholder="https://script.google.com/macros/s/.../exec">
           </div>
           <div style="display:flex; gap:10px; flex-wrap:wrap;">
@@ -1112,16 +1108,14 @@ function setupMasterLogTracker() {
 }
 `;
 
+  // Replace with your Google Cloud OAuth Client ID (Developer Hardcoded)
+  const DEVELOPER_GOOGLE_CLIENT_ID = 'YOUR_DEVELOPER_CLIENT_ID.apps.googleusercontent.com';
+
   function startGoogleAutoProvision() {
-    let clientId = document.getElementById('gs-client-id')?.value.trim() || localStorage.getItem('productivity_tracker_client_id');
-    if (!clientId) {
-      clientId = prompt('Please enter your Google OAuth Client ID (from Google Cloud Console):');
-      if (!clientId) return;
-      clientId = clientId.trim();
-    }
-    localStorage.setItem('productivity_tracker_client_id', clientId);
-    if (document.getElementById('gs-client-id')) {
-      document.getElementById('gs-client-id').value = clientId;
+    const clientId = DEVELOPER_GOOGLE_CLIENT_ID;
+    if (!clientId || clientId.includes('YOUR_DEVELOPER_CLIENT_ID')) {
+      showToast('Developer notice: Please replace DEVELOPER_GOOGLE_CLIENT_ID in tracker-app.html with your actual Google OAuth Client ID.');
+      return;
     }
 
     if (typeof google === 'undefined' || !google.accounts) {
