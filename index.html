@@ -969,6 +969,42 @@
   </div>
 </div>
 
+<!-- Provision Success Modal -->
+<div class="modal-overlay" id="provision-success-modal">
+  <div class="modal" style="max-width: 550px;">
+    <div class="modal-header">
+      <h3 class="modal-title" style="color: var(--accent);">Backend Provisioned Successfully!</h3>
+      <button class="close-btn" onclick="closeProvisionSuccessModal()">&times;</button>
+    </div>
+    <div style="display:flex; flex-direction:column; gap:16px;">
+      <p style="color:var(--text); font-size:13px; font-weight: 500;">
+        Your private Google Sheet and Apps Script project have been created, and all automation code (<code style="background:var(--border); padding:2px 4px; border-radius:4px;">Code.gs</code>) has been pushed automatically!
+      </p>
+
+      <div style="display: flex; gap: 10px; flex-direction: column;">
+        <a id="success-sheet-link" href="#" target="_blank" class="btn btn-primary" style="justify-content: center; text-decoration: none; padding: 12px; font-size: 13px;">
+          📊 Click to Open Your New Google Sheet
+        </a>
+        <a id="success-script-link" href="#" target="_blank" class="btn btn-success" style="justify-content: center; text-decoration: none; padding: 12px; font-size: 13px;">
+          ⚡ Click to Open Your Apps Script Editor
+        </a>
+      </div>
+
+      <div style="background: var(--surface-alt); padding: 16px; border-radius: 8px; border: 1px solid var(--border); font-size: 12px; color: var(--text-muted); display:flex; flex-direction:column; gap:6px;">
+        <strong style="color: var(--text);">Final 10-Second Web App Deployment:</strong>
+        <ol style="padding-left: 16px; display: flex; flex-direction: column; gap: 3px;">
+          <li>In your opened Apps Script editor, click <strong>Deploy > New deployment</strong>.</li>
+          <li>Select type: <strong>Web app</strong> (Execute as: <strong>Me</strong>, Who has access: <strong>Anyone</strong>).</li>
+          <li>Copy your <strong>Web App URL</strong> and paste it into the connection box.</li>
+        </ol>
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button type="button" class="btn" onclick="closeProvisionSuccessModal()" style="width: 100%; justify-content: center;">Got it, Continue</button>
+    </div>
+  </div>
+</div>
+
 <!-- Delete Confirmation Modal -->
 <div class="modal-overlay" id="delete-modal">
   <div class="modal">
@@ -1202,29 +1238,21 @@ function setupMasterLogTracker() {
         throw new Error('Apps Script API Error (Code push): ' + errText);
       }
 
-      showToast('Success! Opening your Google Sheet & Apps Script editor...');
-
-      // Open both tabs automatically
-      window.open(sheetUrl, '_blank');
-      const scriptEditorUrl = `https://script.google.com/home/projects/${scriptId}/edit`;
-      window.open(scriptEditorUrl, '_blank');
-
-      alert('Success! Your Google Sheet and Apps Script project were created & Code.gs was pushed automatically.\n\nTwo tabs have opened:\n1. Your new Google Sheet\n2. Your Apps Script editor\n\nIn your Apps Script editor:\n- Click Deploy > New deployment\n- Select type: Web app\n- Execute as: Me, Who has access: Anyone\n- Copy the Web App URL and paste it into the connection box.');
-
-      googleSheetsConfig = { url: webAppUrl, spreadsheetId: spreadsheetId, connected: true };
-      saveToStorage();
-      document.getElementById('gs-webapp-url').value = webAppUrl;
-      document.getElementById('sync-status-text').textContent = 'Mode: Connected to Google Sheets (Fully Automated)';
       closeSheetsModal();
-      showToast('Success! Google Sheet & Web App created & deployed automatically.');
-
-      window.open(sheetUrl, '_blank');
-      fetchFromGoogleSheets();
+      const scriptEditorUrl = `https://script.google.com/home/projects/${scriptId}/edit`;
+      document.getElementById('success-sheet-link').href = sheetUrl;
+      document.getElementById('success-script-link').href = scriptEditorUrl;
+      document.getElementById('provision-success-modal').classList.add('open');
+      showToast('Backend provisioned successfully!');
     } catch (err) {
       console.error('Auto-provision error:', err);
       alert('Auto-provision failed: ' + err.message);
       showToast('Auto-provision failed: ' + err.message);
     }
+  }
+
+  function closeProvisionSuccessModal() {
+    document.getElementById('provision-success-modal').classList.remove('open');
   }
 
   async function syncToGoogleSheets(task) {
