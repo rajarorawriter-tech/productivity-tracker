@@ -21,13 +21,20 @@ function onOpen() {
 }
 
 /**
+ * Helper utility to return JSON responses.
+ */
+function jsonResponse(obj) {
+  return ContentService.createTextOutput(JSON.stringify(obj))
+    .setMimeType(ContentService.MimeType.JSON);
+}
+
+/**
  * Handles Web App GET requests from the web dashboard to fetch tasks or auto-initialize sheet.
  */
 function doGet(e) {
   var ss = SpreadsheetApp.getActiveSpreadsheet();
   var logSheet = ss.getSheetByName('Master_Log');
 
-  // If Master_Log doesn't exist, auto-initialize the workbook structure
   if (!logSheet) {
     setupMasterLogTracker();
     ss = SpreadsheetApp.getActiveSpreadsheet();
@@ -35,13 +42,14 @@ function doGet(e) {
   }
 
   var rows = logSheet.getDataRange().getValues();
-  var headers = rows.shift(); // remove header
+  rows.shift(); // remove header
 
+  var timeZone = Session.getScriptTimeZone();
   var data = rows.map(function(r, index) {
     return {
       id: index + 1,
       rowIndex: index + 2,
-      date: r[0] ? Utilities.formatDate(new Date(r[0]), Session.getScriptTimeZone(), "yyyy-MM-dd") : '',
+      date: r[0] ? Utilities.formatDate(new Date(r[0]), timeZone, "yyyy-MM-dd") : '',
       taskName: r[1] || '',
       category: r[2] || '',
       timeBlock: r[3] || '',
@@ -51,15 +59,14 @@ function doGet(e) {
       stakeholder: r[7] || '',
       status: r[8] || 'In Progress',
       progress: r[9] || 0,
-      nextUpdate: r[10] ? Utilities.formatDate(new Date(r[10]), Session.getScriptTimeZone(), "yyyy-MM-dd") : '',
+      nextUpdate: r[10] ? Utilities.formatDate(new Date(r[10]), timeZone, "yyyy-MM-dd") : '',
       followUp: r[11] || 'No',
       timeSlot: r[12] || '',
       notes: r[13] || ''
     };
   });
 
-  return ContentService.createTextOutput(JSON.stringify({ status: 'success', data: data }))
-    .setMimeType(ContentService.MimeType.JSON);
+  return jsonResponse({ status: 'success', data: data });
 }
 
 /**
@@ -82,32 +89,24 @@ function doPost(e) {
 
       if (rowIndex && rowIndex >= 2 && rowIndex <= lastRow) {
         logSheet.deleteRow(rowIndex);
-        return ContentService.createTextOutput(JSON.stringify({ status: 'success', message: 'Row deleted successfully' }))
-          .setMimeType(ContentService.MimeType.JSON);
-      } else {
-        var targetTask = payload.taskName;
-        var targetDate = payload.date;
-        var dataRange = logSheet.getDataRange().getValues();
-        var deleted = false;
+        return jsonResponse({ status: 'success', message: 'Row deleted successfully' });
+      }
 
-        for (var i = 1; i < dataRange.length; i++) {
-          var rowDate = dataRange[i][0] ? Utilities.formatDate(new Date(dataRange[i][0]), Session.getScriptTimeZone(), "yyyy-MM-dd") : '';
-          var rowTask = dataRange[i][1] || '';
-          if (rowTask === targetTask && (!targetDate || rowDate === targetDate)) {
-            logSheet.deleteRow(i + 1);
-            deleted = true;
-            break;
-          }
-        }
+      var targetTask = payload.taskName;
+      var targetDate = payload.date;
+      var dataRange = logSheet.getDataRange().getValues();
+      var timeZone = Session.getScriptTimeZone();
 
-        if (deleted) {
-          return ContentService.createTextOutput(JSON.stringify({ status: 'success', message: 'Row deleted by matching criteria' }))
-            .setMimeType(ContentService.MimeType.JSON);
-        } else {
-          return ContentService.createTextOutput(JSON.stringify({ status: 'error', message: 'Row not found for deletion' }))
-            .setMimeType(ContentService.MimeType.JSON);
+      for (var i = 1; i < dataRange.length; i++) {
+        var rowDate = dataRange[i][0] ? Utilities.formatDate(new Date(dataRange[i][0]), timeZone, "yyyy-MM-dd") : '';
+        var rowTask = dataRange[i][1] || '';
+        if (rowTask === targetTask && (!targetDate || rowDate === targetDate)) {
+          logSheet.deleteRow(i + 1);
+          return jsonResponse({ status: 'success', message: 'Row deleted by matching criteria' });
         }
       }
+
+      return jsonResponse({ status: 'error', message: 'Row not found for deletion' });
     }
 
     logSheet.appendRow([
@@ -127,11 +126,9 @@ function doPost(e) {
       payload.notes || ''
     ]);
 
-    return ContentService.createTextOutput(JSON.stringify({ status: 'success', message: 'Row appended successfully' }))
-      .setMimeType(ContentService.MimeType.JSON);
+    return jsonResponse({ status: 'success', message: 'Row appended successfully' });
   } catch(err) {
-    return ContentService.createTextOutput(JSON.stringify({ status: 'error', message: err.toString() }))
-      .setMimeType(ContentService.MimeType.JSON);
+    return jsonResponse({ status: 'error', message: err.toString() });
   }
 }
 
@@ -236,193 +233,214 @@ function setupMasterLogTracker() {
     dashSheet.getRange(r, 3).setFormula('=SUMIF(Master_Log!$C$2:$C$200, A' + r + ', Master_Log!$F$2:$F$200)');
     dashSheet.getRange(r, 4).setFormula('=SUMIF(Master_Log!$C$2:$C$200, A' + r + ', Master_Log!$G$2:$G$200)');
     dashSheet.getRange(r, 5).setFormula('=C' + r + ' - D' + r);
-    dashSheet.getRange(r, 6).setFormula('=IFERROR(D' + r + '/SUM($D$13:$D$18), 0)');
-    dashSheet.getRange(r, 3, 1, 3).setNumberFormat('0.0');
+    dashSheet.getRange(r, 6).setFormula('=IFERROR(D' + r + '/E$8, 0)');
     dashSheet.getRange(r, 6).setNumberFormat('0.0%');
   }
+  dashSheet.getRange('C13:E18').setNumberFormat('0.0');
+
+  dashSheet.getRange('A20').setValue('Priority Breakdown');
+  dashSheet.getRange('A20').setFontWeight('bold').setFontSize(13);
+  var priHeaders = ['Priority', 'Task Count', 'Completed Count', 'Completion Rate'];
+  dashSheet.getRange('A21:D21').setValues([priHeaders]);
+  formatHeaderRow(dashSheet, 4);
+
+  var priorities = ['High', 'Medium', 'Low'];
+  for (var p = 0; p < priorities.length; p++) {
+    var pr = 22 + p;
+    dashSheet.getRange(pr, 1).setValue(priorities[p]);
+    dashSheet.getRange(pr, 2).setFormula('=COUNTIF(Master_Log!$E$2:$E$200, A' + pr + ')');
+    dashSheet.getRange(pr, 3).setFormula('=COUNTIFS(Master_Log!$E$2:$E$200, A' + pr + ', Master_Log!$I$2:$I$200, "Completed")');
+    dashSheet.getRange(pr, 4).setFormula('=IFERROR(C' + pr + '/B' + pr + ', 0)');
+    dashSheet.getRange(pr, 4).setNumberFormat('0.0%');
+  }
+
+  dashSheet.getRange('A27').setValue('Execution Status Breakdown');
+  dashSheet.getRange('A27').setFontWeight('bold').setFontSize(13);
+  var statHeaders = ['Status', 'Task Count', 'Share of Total'];
+  dashSheet.getRange('A28:C28').setValues([statHeaders]);
+  formatHeaderRow(dashSheet, 3);
+
+  var statuses = ['In Progress', 'Not Started', 'Completed', 'Deferred'];
+  for (var s = 0; s < statuses.length; s++) {
+    var sr = 29 + s;
+    dashSheet.getRange(sr, 1).setValue(statuses[s]);
+    dashSheet.getRange(sr, 2).setFormula('=COUNTIF(Master_Log!$I$2:$I$200, A' + sr + ')');
+    dashSheet.getRange(sr, 3).setFormula('=IFERROR(B' + sr + '/$A$8, 0)');
+    dashSheet.getRange(sr, 3).setNumberFormat('0.0%');
+  }
+
+  dashSheet.setColumnWidth(1, 220);
+  dashSheet.setColumnWidth(2, 140);
+  dashSheet.setColumnWidth(3, 140);
+  dashSheet.setColumnWidth(4, 140);
+  dashSheet.setColumnWidth(5, 140);
+  dashSheet.setColumnWidth(6, 140);
+  dashSheet.setFrozenRows(8);
 
   // ----------------------------------------------------
   // TAB 3: Date-Wise View Setup
   // ----------------------------------------------------
-  var dateSheet = ss.getSheetByName('Date-Wise View');
-  dateSheet.clear();
-  dateSheet.getRange('A1').setValue('DAILY REVIEW — SINGLE DATE STANDUP');
-  dateSheet.getRange('A1').setFontWeight('bold').setFontSize(14);
-  dateSheet.getRange('A2').setValue('Select Date:');
-  dateSheet.getRange('A2').setFontWeight('bold');
-  dateSheet.getRange('B2').setValue(new Date());
-  dateSheet.getRange('B2').setDataValidation(SpreadsheetApp.newDataValidation().requireDate().build());
-  dateSheet.getRange('B2').setNumberFormat('yyyy-mm-dd');
-  dateSheet.getRange('A4').setFormula('=IFERROR(FILTER(Master_Log!A1:N200, Master_Log!A1:A200 = B2), "No entries found for selected date.")');
+  setupViewTab(ss, 'Date-Wise View', 'Select Date:', '=IFERROR(FILTER(Master_Log!A2:N200, Master_Log!A2:A200 = B2), "No tasks found for selected date.")', 'Date');
 
   // ----------------------------------------------------
   // TAB 4: Task-Wise View Setup
   // ----------------------------------------------------
-  var taskSheet = ss.getSheetByName('Task-Wise View');
-  taskSheet.clear();
-  taskSheet.getRange('A1').setValue('TASK LIFECYCLE HISTORY');
-  taskSheet.getRange('A1').setFontWeight('bold').setFontSize(14);
-  taskSheet.getRange('A2').setValue('Select Task:');
-  taskSheet.getRange('A2').setFontWeight('bold');
-  taskSheet.getRange('B2').setValue('Architecture Blueprint Review');
-  var taskVal = SpreadsheetApp.newDataValidation().requireValueInRange(logSheet.getRange('B2:B50')).build();
-  taskSheet.getRange('B2').setDataValidation(taskVal);
-  taskSheet.getRange('A4').setFormula('=IFERROR(FILTER(Master_Log!A1:N200, Master_Log!B1:B200 = B2), "No history found for selected task.")');
+  setupViewTab(ss, 'Task-Wise View', 'Select Task:', '=IFERROR(FILTER(Master_Log!A2:N200, Master_Log!B2:B200 = B2), "No history found for selected task.")', 'Task Name');
 
   // ----------------------------------------------------
   // TAB 5: Stakeholder-Wise View Setup
   // ----------------------------------------------------
-  var stakeSheet = ss.getSheetByName('Stakeholder-Wise View');
-  stakeSheet.clear();
-  stakeSheet.getRange('A1').setValue('STAKEHOLDER COLLABORATION & DELIVERABLES');
-  stakeSheet.getRange('A1').setFontWeight('bold').setFontSize(14);
-  stakeSheet.getRange('A2').setValue('Select Stakeholder:');
-  stakeSheet.getRange('A2').setFontWeight('bold');
-  stakeSheet.getRange('B2').setValue('Internal Team');
-  var stakeVal = SpreadsheetApp.newDataValidation().requireValueInRange(logSheet.getRange('H2:H50')).build();
-  stakeSheet.getRange('B2').setDataValidation(stakeVal);
-  stakeSheet.getRange('A4').setFormula('=IFERROR(FILTER(Master_Log!A1:N200, Master_Log!H1:H200 = B2), "No deliverables found for stakeholder.")');
+  setupViewTab(ss, 'Stakeholder-Wise View', 'Select Stakeholder:', '=IFERROR(FILTER(Master_Log!A2:N200, Master_Log!H2:H200 = B2), "No records found for selected stakeholder.")', 'Stakeholder');
 
   // ----------------------------------------------------
   // TAB 6: Master Progress View Setup
   // ----------------------------------------------------
   var progSheet = ss.getSheetByName('Master Progress View');
   progSheet.clear();
-  progSheet.getRange('A1').setValue('MASTER PROGRESS VIEW (PANORAMIC AUDIT GRID)');
-  progSheet.getRange('A1').setFontWeight('bold').setFontSize(14);
+  progSheet.getRange('A1').setValue('MASTER PROGRESS AUDIT GRID');
+  progSheet.getRange('A1').setFontWeight('bold').setFontSize(14).setFontColor('#0f172a');
   progSheet.getRange('A3').setFormula('=ARRAYFORMULA(Master_Log!A1:N200)');
+  progSheet.setFrozenRows(3);
+  formatHeaderRow(progSheet, 14);
 
   // ----------------------------------------------------
   // TAB 7: Timeline View Setup
   // ----------------------------------------------------
   var timeSheet = ss.getSheetByName('Timeline View');
   timeSheet.clear();
-  timeSheet.getRange('A1').setValue('TIMELINE & DATE RANGE GANTT VIEW');
-  timeSheet.getRange('A1').setFontWeight('bold').setFontSize(14);
-  timeSheet.getRange('A2').setValue('Start Date:');
-  timeSheet.getRange('A2').setFontWeight('bold');
-  timeSheet.getRange('B2').setValue(new Date());
-  timeSheet.getRange('B2').setNumberFormat('yyyy-mm-dd');
-  timeSheet.getRange('A3').setValue('End Date:');
+  timeSheet.getRange('A1').setValue('TIMELINE & DATE-RANGE EXECUTION VIEW');
+  timeSheet.getRange('A1').setFontWeight('bold').setFontSize(14).setFontColor('#0f172a');
+  timeSheet.getRange('A3').setValue('Start Date:');
   timeSheet.getRange('A3').setFontWeight('bold');
-  timeSheet.getRange('B3').setValue(new Date(new Date().getTime() + 7*86400000));
-  timeSheet.getRange('B3').setNumberFormat('yyyy-mm-dd');
-  timeSheet.getRange('A5').setFormula('=IFERROR(FILTER(Master_Log!A1:N200, Master_Log!A1:A200 >= B2, Master_Log!A1:A200 <= B3), "No tasks found in selected date range.")');
-
-  sheetNames.forEach(function(name) {
-    var sh = ss.getSheetByName(name);
-    try {
-      sh.autoResizeColumns(1, 15);
-    } catch(e) {}
-  });
-
-  SpreadsheetApp.getUi().alert('Daily & Hourly Tracker initialized with professional formatting across all 7 tabs!');
+  timeSheet.getRange('B3').setValue('');
+  timeSheet.getRange('D3').setValue('End Date:');
+  timeSheet.getRange('D3').setFontWeight('bold');
+  timeSheet.getRange('E3').setValue('');
+  timeSheet.getRange('A5').setFormula('=IFERROR(FILTER(Master_Log!A1:N200, Master_Log!A2:A200 >= B3, Master_Log!A2:A200 <= E3), "Select start and end dates to filter execution timeline.")');
+  timeSheet.setFrozenRows(5);
+  formatHeaderRow(timeSheet, 14);
 }
 
-function applyMasterLogValidations(sheet) {
-  var categories = ['Deep Work', 'Admin', 'Meetings', 'Health & Fitness', 'Personal', 'Learning'];
-  sheet.getRange('C2:C200').setDataValidation(SpreadsheetApp.newDataValidation().requireValueInList(categories, true).build());
-
-  var timeBlocks = [
-    '06:00 AM - 07:00 AM', '07:00 AM - 08:00 AM', '08:00 AM - 09:00 AM', '09:00 AM - 10:00 AM',
-    '10:00 AM - 11:00 AM', '11:00 AM - 12:00 PM', '12:00 PM - 01:00 PM', '01:00 PM - 02:00 PM',
-    '02:00 PM - 03:00 PM', '03:00 PM - 04:00 PM', '04:00 PM - 05:00 PM', '05:00 PM - 06:00 PM',
-    '06:00 PM - 07:00 PM', '07:00 PM - 08:00 PM', '08:00 PM - 09:00 PM', '09:00 PM - 10:00 PM'
-  ];
-  sheet.getRange('D2:D200').setDataValidation(SpreadsheetApp.newDataValidation().requireValueInList(timeBlocks, true).build());
-
-  var priorities = ['High', 'Medium', 'Low'];
-  sheet.getRange('E2:E200').setDataValidation(SpreadsheetApp.newDataValidation().requireValueInList(priorities, true).build());
-
-  var statuses = ['Not Started', 'In Progress', 'Completed', 'Deferred'];
-  sheet.getRange('I2:I200').setDataValidation(SpreadsheetApp.newDataValidation().requireValueInList(statuses, true).build());
-
-  var progress = ['0', '25', '50', '75', '100'];
-  sheet.getRange('J2:J200').setDataValidation(SpreadsheetApp.newDataValidation().requireValueInList(progress, true).build());
-
-  var yesNo = ['Yes', 'No'];
-  sheet.getRange('L2:L200').setDataValidation(SpreadsheetApp.newDataValidation().requireValueInList(yesNo, true).build());
-
-  var slots = [
-    '09:00 AM', '10:00 AM', '11:00 AM', '12:00 PM',
-    '01:00 PM', '02:00 PM', '03:00 PM', '04:00 PM', '05:00 PM', '06:00 PM'
-  ];
-  sheet.getRange('M2:M200').setDataValidation(SpreadsheetApp.newDataValidation().requireValueInList(slots, true).build());
-}
-
-function applyConditionalFormatting(sheet) {
-  var range = sheet.getRange('I2:I200');
-  var rules = sheet.getConditionalFormatRules();
-
-  rules.push(SpreadsheetApp.newConditionalFormatRule().whenTextEqualTo('Completed').setBackground('#d1fae5').setFontColor('#065f46').setRanges([range]).build());
-  rules.push(SpreadsheetApp.newConditionalFormatRule().whenTextEqualTo('In Progress').setBackground('#fef3c7').setFontColor('#92400e').setRanges([range]).build());
-  rules.push(SpreadsheetApp.newConditionalFormatRule().whenTextEqualTo('Not Started').setBackground('#fee2e2').setFontColor('#991b1b').setRanges([range]).build());
-  rules.push(SpreadsheetApp.newConditionalFormatRule().whenTextEqualTo('Deferred').setBackground('#f1f5f9').setFontColor('#475569').setRanges([range]).build());
-
-  sheet.setConditionalFormatRules(rules);
+function setupViewTab(ss, sheetName, labelText, formulaText, entityType) {
+  var sheet = ss.getSheetByName(sheetName);
+  sheet.clear();
+  sheet.getRange('A1').setValue(sheetName.toUpperCase() + ' — FILTER VIEW');
+  sheet.getRange('A1').setFontWeight('bold').setFontSize(14).setFontColor('#0f172a');
+  sheet.getRange('A3').setValue(labelText);
+  sheet.getRange('A3').setFontWeight('bold');
+  sheet.getRange('B3').setValue('');
+  sheet.getRange('A5').setFormula(formulaText);
+  sheet.setFrozenRows(5);
+  formatHeaderRow(sheet, 14);
 }
 
 function formatHeaderRow(sheet, numCols) {
   var range = sheet.getRange(1, 1, 1, numCols);
+  if (sheet.getName() !== 'Master_Log' && sheet.getName() !== 'Master Progress View' && sheet.getName() !== 'Timeline View' && !sheet.getName().includes('Dashboard')) {
+    // For view tabs where headers are at row 5
+    range = sheet.getRange(5, 1, 1, numCols);
+  } else if (sheet.getName() === 'Dashboard & Summary') {
+    return; // Handled individually
+  }
   range.setBackground('#0f172a');
   range.setFontColor('#ffffff');
   range.setFontWeight('bold');
-  range.setHorizontalAlignment('center');
-  sheet.setFrozenRows(1);
+}
+
+function applyMasterLogValidations(sheet) {
+  var categories = ['Deep Work', 'Admin', 'Meetings', 'Health & Fitness', 'Personal', 'Learning'];
+  var timeBlocks = ['06:00 AM - 07:00 AM', '07:00 AM - 08:00 AM', '08:00 AM - 09:00 AM', '09:00 AM - 10:00 AM', '10:00 AM - 11:00 AM', '11:00 AM - 12:00 PM', '12:00 PM - 01:00 PM', '01:00 PM - 02:00 PM', '02:00 PM - 03:00 PM', '03:00 PM - 04:00 PM', '04:00 PM - 05:00 PM', '05:00 PM - 06:00 PM', '06:00 PM - 07:00 PM', '07:00 PM - 08:00 PM', '08:00 PM - 09:00 PM', '09:00 PM - 10:00 PM'];
+  var priorities = ['High', 'Medium', 'Low'];
+  var statuses = ['Not Started', 'In Progress', 'Completed', 'Deferred'];
+  var progresses = ['0', '25', '50', '75', '100'];
+  var yesNo = ['Yes', 'No'];
+  var timeSlots = ['09:00 AM', '10:00 AM', '11:00 AM', '12:00 PM', '01:00 PM', '02:00 PM', '03:00 PM', '04:00 PM', '05:00 PM', '06:00 PM'];
+
+  sheet.getRange('C2:C100').setDataValidation(SpreadsheetApp.newDataValidation().explicitValueInList(categories).build());
+  sheet.getRange('D2:D100').setDataValidation(SpreadsheetApp.newDataValidation().explicitValueInList(timeBlocks).build());
+  sheet.getRange('E2:E100').setDataValidation(SpreadsheetApp.newDataValidation().explicitValueInList(priorities).build());
+  sheet.getRange('I2:I100').setDataValidation(SpreadsheetApp.newDataValidation().explicitValueInList(statuses).build());
+  sheet.getRange('J2:J100').setDataValidation(SpreadsheetApp.newDataValidation().explicitValueInList(progresses).build());
+  sheet.getRange('L2:L100').setDataValidation(SpreadsheetApp.newDataValidation().explicitValueInList(yesNo).build());
+  sheet.getRange('M2:M100').setDataValidation(SpreadsheetApp.newDataValidation().explicitValueInList(timeSlots).build());
+}
+
+function applyConditionalFormatting(sheet) {
+  var range = sheet.getRange('I2:I100');
+  var rules = sheet.getConditionalFormatRules();
+
+  var completedRule = SpreadsheetApp.newConditionalFormatRule()
+    .whenTextEqualTo('Completed')
+    .setBackground('#d1fae5')
+    .setFontColor('#065f46')
+    .setRanges([range])
+    .build();
+
+  var inProgressRule = SpreadsheetApp.newConditionalFormatRule()
+    .whenTextEqualTo('In Progress')
+    .setBackground('#fef3c7')
+    .setFontColor('#92400e')
+    .setRanges([range])
+    .build();
+
+  var notStartedRule = SpreadsheetApp.newConditionalFormatRule()
+    .whenTextEqualTo('Not Started')
+    .setBackground('#fee2e2')
+    .setFontColor('#991b1b')
+    .setRanges([range])
+    .build();
+
+  var deferredRule = SpreadsheetApp.newConditionalFormatRule()
+    .whenTextEqualTo('Deferred')
+    .setBackground('#f1f5f9')
+    .setFontColor('#475569')
+    .setRanges([range])
+    .build();
+
+  rules.push(completedRule);
+  rules.push(inProgressRule);
+  rules.push(notStartedRule);
+  rules.push(deferredRule);
+
+  sheet.setConditionalFormatRules(rules);
 }
 
 function scheduleFollowUpCalendarEvent() {
   var sheet = SpreadsheetApp.getActiveSpreadsheet().getActiveSheet();
-  if (sheet.getName() !== 'Master_Log') {
-    SpreadsheetApp.getUi().alert('Please select a task row in the Master_Log sheet.');
-    return;
-  }
-
   var row = sheet.getActiveCell().getRow();
   if (row < 2) {
-    SpreadsheetApp.getUi().alert('Please select a valid data row.');
+    SpreadsheetApp.getUi().alert('Please select a valid task row in Master_Log.');
     return;
   }
 
-  var date = sheet.getRange(row, 1).getValue();
-  var taskName = sheet.getRange(row, 2).getValue();
-  var stakeholder = sheet.getRange(row, 8).getValue();
-  var followUpReq = sheet.getRange(row, 12).getValue();
-  var followUpTimeStr = sheet.getRange(row, 13).getValue();
-  var notes = sheet.getRange(row, 14).getValue();
+  var data = sheet.getRange(row, 1, 1, 14).getValues()[0];
+  var taskName = data[1];
+  var followUpReq = data[11];
+  var followUpTime = data[12] || '10:00 AM';
+  var dateVal = data[0];
+  var stakeholder = data[7];
+  var notes = data[13];
 
   if (followUpReq !== 'Yes') {
-    SpreadsheetApp.getUi().alert('Follow-Up Required? is not set to "Yes" for this task.');
+    SpreadsheetApp.getUi().alert('Follow-Up Required? is set to "No" for this task.');
     return;
   }
 
-  if (!date || !taskName) {
-    SpreadsheetApp.getUi().alert('Task Date and Task Name are required.');
-    return;
-  }
+  var eventDate = dateVal ? new Date(dateVal) : new Date();
+  var timeParts = followUpTime.split(':');
+  var hour = parseInt(timeParts[0], 10);
+  var minute = parseInt(timeParts[1], 10);
+  if (followUpTime.includes('PM') && hour < 12) hour += 12;
+  if (followUpTime.includes('AM') && hour === 12) hour = 0;
 
-  var eventDate = new Date(date);
-  if (followUpTimeStr) {
-    var parts = followUpTimeStr.match(/(\d+):(\d+)\s*(AM|PM)/i);
-    if (parts) {
-      var hours = parseInt(parts[1], 10);
-      var minutes = parseInt(parts[2], 10);
-      var ampm = parts[3].toUpperCase();
-      if (ampm === 'PM' && hours < 12) hours += 12;
-      if (ampm === 'AM' && hours === 12) hours = 0;
-      eventDate.setHours(hours, minutes, 0, 0);
-    }
-  } else {
-    eventDate.setHours(10, 0, 0, 0);
-  }
+  eventDate.setHours(hour, minute, 0, 0);
+  var endDate = new Date(eventDate.getTime() + 3600000); // 1 hour duration
 
-  var endDate = new Date(eventDate.getTime() + 3600000);
-  var title = 'Follow-Up: ' + taskName + (stakeholder ? ' (' + stakeholder + ')' : '');
-  var description = 'Daily & Hourly Tracker Follow-Up\n\nTask: ' + taskName + '\nStakeholder: ' + stakeholder + '\nNotes: ' + notes;
-
-  CalendarApp.getDefaultCalendar().createEvent(title, eventDate, endDate, {
-    description: description
+  var calendar = CalendarApp.getDefaultCalendar();
+  calendar.createEvent('Follow-Up: ' + taskName + ' (' + stakeholder + ')', eventDate, endDate, {
+    description: 'Daily & Hourly Tracker Follow-Up\n\nTask: ' + taskName + '\nStakeholder: ' + stakeholder + '\nNotes: ' + notes,
+    location: 'Virtual / Meeting'
   });
 
-  SpreadsheetApp.getUi().alert('Successfully scheduled calendar follow-up for ' + taskName + ' on ' + eventDate.toLocaleString() + '!');
+  SpreadsheetApp.getUi().alert('Success! Calendar event scheduled for ' + eventDate.toLocaleString());
 }
