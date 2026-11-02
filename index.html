@@ -1114,29 +1114,35 @@ function setupMasterLogTracker() {
   function startGoogleAutoProvision() {
     const clientId = DEVELOPER_GOOGLE_CLIENT_ID;
     if (!clientId || clientId.includes('YOUR_DEVELOPER_CLIENT_ID')) {
-      showToast('Developer notice: Please replace DEVELOPER_GOOGLE_CLIENT_ID in tracker-app.html with your actual Google OAuth Client ID.');
+      alert('Developer notice: Please configure Google OAuth Client ID.');
       return;
     }
 
-    if (typeof google === 'undefined' || !google.accounts) {
-      showToast('Google Identity Services script is loading. Please try again in a moment.');
+    if (typeof google === 'undefined' || !google.accounts || !google.accounts.oauth2) {
+      alert('Google Identity Services script is still loading or blocked by ad-blocker. Please check your internet connection and try again.');
       return;
     }
 
-    const client = google.accounts.oauth2.initTokenClient({
-      client_id: clientId,
-      scope: 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/script.projects https://www.googleapis.com/auth/drive.file',
-      callback: async (response) => {
-        if (response.error) {
-          showToast('OAuth Error: ' + response.error);
-          return;
+    try {
+      const client = google.accounts.oauth2.initTokenClient({
+        client_id: clientId,
+        scope: 'https://www.googleapis.com/auth/spreadsheets https://www.googleapis.com/auth/script.projects https://www.googleapis.com/auth/drive.file',
+        callback: async (response) => {
+          if (response.error) {
+            alert('Google OAuth Error / Refusal: ' + JSON.stringify(response));
+            return;
+          }
+          if (response.access_token) {
+            await autoProvisionWorkbook(response.access_token);
+          } else {
+            alert('Google OAuth Error: No access token received. Response: ' + JSON.stringify(response));
+          }
         }
-        if (response.access_token) {
-          await autoProvisionWorkbook(response.access_token);
-        }
-      }
-    });
-    client.requestAccessToken();
+      });
+      client.requestAccessToken();
+    } catch (e) {
+      alert('Failed to initialize Google OAuth Client: ' + e.message);
+    }
   }
 
   async function autoProvisionWorkbook(token) {
@@ -1147,8 +1153,11 @@ function setupMasterLogTracker() {
         headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
         body: JSON.stringify({ properties: { title: 'Daily & Hourly Tracker (SSOT)' } })
       });
+      if (!sheetRes.ok) {
+        const errText = await sheetRes.text();
+        throw new Error('Sheets API Error: ' + errText);
+      }
       const sheetData = await sheetRes.json();
-      if (!sheetData.spreadsheetId) throw new Error('Failed to create Google Sheet');
       const spreadsheetId = sheetData.spreadsheetId;
       const sheetUrl = sheetData.spreadsheetUrl;
 
@@ -1158,11 +1167,14 @@ function setupMasterLogTracker() {
         headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
         body: JSON.stringify({ title: 'Daily Tracker Backend', parentId: spreadsheetId })
       });
+      if (!scriptRes.ok) {
+        const errText = await scriptRes.text();
+        throw new Error('Apps Script API Error (Project creation): ' + errText);
+      }
       const scriptData = await scriptRes.json();
-      if (!scriptData.scriptId) throw new Error('Failed to create Apps Script project');
       const scriptId = scriptData.scriptId;
 
-      showToast('Pushing Apps Script automation code & web app config...');
+      showToast('Pushing Apps Script automation code...');
       const appScriptManifest = {
         timeZone: "America/New_York",
         dependencies: {},
@@ -1174,7 +1186,7 @@ function setupMasterLogTracker() {
         runtimeVersion: "V8"
       };
 
-      await fetch(`https://script.googleapis.com/v1/projects/${scriptId}/content`, {
+      const contentRes = await fetch(`https://script.googleapis.com/v1/projects/${scriptId}/content`, {
         method: 'PUT',
         headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -1184,6 +1196,10 @@ function setupMasterLogTracker() {
           ]
         })
       });
+      if (!contentRes.ok) {
+        const errText = await contentRes.text();
+        throw new Error('Apps Script API Error (Code push): ' + errText);
+      }
 
       showToast('Creating Apps Script version...');
       const verRes = await fetch(`https://script.googleapis.com/v1/projects/${scriptId}/versions`, {
@@ -1191,6 +1207,10 @@ function setupMasterLogTracker() {
         headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
         body: JSON.stringify({ description: 'v1' })
       });
+      if (!verRes.ok) {
+        const errText = await verRes.text();
+        throw new Error('Apps Script API Error (Version creation): ' + errText);
+      }
       const verData = await verRes.json();
       const versionNumber = verData.versionNumber || 1;
 
@@ -1204,6 +1224,10 @@ function setupMasterLogTracker() {
           description: 'Web App Auto Deployment v1'
         })
       });
+      if (!deployRes.ok) {
+        const errText = await deployRes.text();
+        throw new Error('Apps Script API Error (Deployment): ' + errText);
+      }
       const deployData = await deployRes.json();
       const webAppUrl = deployData.entryPoint?.webApp?.url || `https://script.google.com/macros/s/${scriptId}/exec`;
 
@@ -1216,9 +1240,9 @@ function setupMasterLogTracker() {
 
       window.open(sheetUrl, '_blank');
       fetchFromGoogleSheets();
-
     } catch (err) {
       console.error('Auto-provision error:', err);
+      alert('Auto-provision failed: ' + err.message);
       showToast('Auto-provision failed: ' + err.message);
     }
   }
