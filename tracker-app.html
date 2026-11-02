@@ -1,3 +1,4 @@
+<meta charset="UTF-8">
 <title>Daily & Hourly Tracker</title>
 <meta name="claude:viewport-fit-sides" content="cover">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
@@ -518,9 +519,10 @@
     </div>
   </div>
   <div class="header-actions">
-    <button class="btn btn-secondary" onclick="openGoogleSheetsModal()">📊 Connect Google Sheets</button>
-    <button class="btn btn-secondary" onclick="toggleTheme()">🌓 Theme</button>
-    <button class="btn btn-secondary" onclick="exportCSV()">📥 Export</button>
+    <button class="btn btn-secondary" onclick="openGoogleSheetsModal()">Connect Google Sheets</button>
+    <button class="btn btn-secondary" onclick="fetchFromGoogleSheets()">Sync Now</button>
+    <button class="btn btn-secondary" onclick="toggleTheme()">Theme</button>
+    <button class="btn btn-secondary" onclick="exportCSV()">Export</button>
     <button class="btn" onclick="openNewTaskModal()">+ Log Update / New Task</button>
   </div>
 </header>
@@ -829,7 +831,7 @@
       <div class="form-grid">
         <div class="form-group">
           <label>Date *</label>
-          <input type="date" id="f-date" required>
+          <input type="date" id="f-date" required onchange="checkCalendarButtonVisibility()">
         </div>
         <div class="form-group">
           <label>Task Selection *</label>
@@ -902,10 +904,13 @@
         </div>
         <div class="form-group">
           <label>Follow-Up Required?</label>
-          <select id="f-followup">
+          <select id="f-followup" onchange="checkCalendarButtonVisibility()">
             <option value="No">No</option>
             <option value="Yes">Yes</option>
           </select>
+        </div>
+        <div class="form-group form-full" id="calendar-action-group" style="display:none;">
+          <button type="button" class="btn" onclick="addFormFollowUpToCalendar()" style="background:var(--accent); width:100%; justify-content:center;">Add Follow-Up to Google Calendar</button>
         </div>
         <div class="form-group form-full">
           <label>Daily Update / Notes</label>
@@ -969,6 +974,46 @@
     connected: false
   };
 
+  async function syncToGoogleSheets(task) {
+    if (!googleSheetsConfig.connected || !googleSheetsConfig.url) return;
+    try {
+      await fetch(googleSheetsConfig.url, {
+        method: 'POST',
+        mode: 'no-cors',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(task)
+      });
+      showToast('Synced entry to Google Sheets!');
+    } catch (err) {
+      console.warn('Google Sheets sync error:', err);
+      showToast('Saved locally, but Google Sheets sync encountered an issue.');
+    }
+  }
+
+  async function fetchFromGoogleSheets() {
+    if (!googleSheetsConfig.connected || !googleSheetsConfig.url) {
+      showToast('Please connect Google Sheets first.');
+      openGoogleSheetsModal();
+      return;
+    }
+    showToast('Syncing from Google Sheets...');
+    try {
+      const res = await fetch(googleSheetsConfig.url);
+      const json = await res.json();
+      if (json.status === 'success' && Array.isArray(json.data)) {
+        masterLogData = json.data;
+        saveToStorage();
+        renderDashboard();
+        showToast('Successfully synced from Google Sheets!');
+      } else {
+        showToast('Sync failed: Invalid response from Google Sheets.');
+      }
+    } catch (err) {
+      console.warn('Google Sheets fetch error:', err);
+      showToast('Sync error. Check your Web App URL or network connection.');
+    }
+  }
+
   try {
     const saved = localStorage.getItem('productivity_tracker_data');
     if (saved) masterLogData = JSON.parse(saved);
@@ -977,6 +1022,9 @@
       googleSheetsConfig = JSON.parse(savedConfig);
       if (googleSheetsConfig.connected) {
         document.getElementById('sync-status-text').textContent = 'Mode: Connected to Google Sheets';
+        if (googleSheetsConfig.url) {
+          fetchFromGoogleSheets();
+        }
       }
     }
   } catch(e) {}
@@ -1025,6 +1073,7 @@
 
   function openNewTaskModal() {
     document.getElementById('f-date').value = new Date().toISOString().split('T')[0];
+    document.getElementById('f-followup').value = 'No';
 
     // Populate task dropdown in modal
     const select = document.getElementById('f-task-name-select');
@@ -1040,7 +1089,47 @@
       prefillTaskDefaults(tasks[0]);
     }
 
+    checkCalendarButtonVisibility();
     document.getElementById('task-modal').classList.add('open');
+  }
+
+  function checkCalendarButtonVisibility() {
+    const followupVal = document.getElementById('f-followup').value;
+    const dateVal = document.getElementById('f-date').value;
+    const group = document.getElementById('calendar-action-group');
+    if (group) {
+      if (followupVal === 'Yes' && dateVal) {
+        group.style.display = 'block';
+      } else {
+        group.style.display = 'none';
+      }
+    }
+  }
+
+  function addFormFollowUpToCalendar() {
+    const taskSelectVal = document.getElementById('f-task-name-select').value;
+    const taskName = taskSelectVal === '__NEW__'
+      ? document.getElementById('f-new-task-name').value.trim()
+      : taskSelectVal;
+    const dateVal = document.getElementById('f-date').value;
+    const stakeholder = document.getElementById('f-stakeholder').value || 'Internal';
+    const notes = document.getElementById('f-notes').value || '';
+
+    if (!dateVal || !taskName) {
+      showToast('Please enter a Date and Task Name before adding to calendar.');
+      return;
+    }
+
+    const startStr = dateVal.replace(/-/g, '') + 'T100000Z';
+    const endStr = dateVal.replace(/-/g, '') + 'T110000Z';
+
+    const title = encodeURIComponent('Follow-Up: ' + taskName + ' (' + stakeholder + ')');
+    const details = encodeURIComponent('Daily & Hourly Tracker Follow-Up\n\nTask: ' + taskName + '\nStakeholder: ' + stakeholder + '\nNotes: ' + notes);
+    const location = encodeURIComponent('Virtual / Meeting');
+
+    const gcalUrl = `https://calendar.google.com/calendar/render?action=TEMPLATE&text=${title}&dates=${startStr}/${endStr}&details=${details}&location=${location}`;
+    window.open(gcalUrl, '_blank');
+    showToast('Opening Google Calendar to schedule follow-up!');
   }
 
   function handleTaskNameSelectionChange() {
@@ -1091,6 +1180,7 @@
     document.getElementById('sync-status-text').textContent = 'Mode: Connected to Google Sheets';
     closeSheetsModal();
     showToast('Successfully connected to Google Sheets!');
+    fetchFromGoogleSheets();
   }
 
   function disconnectGoogleSheets() {
@@ -1133,9 +1223,10 @@
     };
     masterLogData.push(newTask);
     saveToStorage();
+    syncToGoogleSheets(newTask);
     closeModal();
     renderDashboard();
-    showToast('Task update / entry saved successfully!');
+    showToast('Task update / entry saved & synced successfully!');
   }
 
   function deleteEntry(id) {

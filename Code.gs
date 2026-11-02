@@ -82,7 +82,7 @@ function doPost(e) {
       payload.timeBlock || '09:00 AM - 10:00 AM',
       payload.priority || 'High',
       payload.planned || 1.0,
-      '=IF(ISBLANK(D' + (logSheet.getLastRow() + 1) + '), 0, 1)',
+      payload.actual !== undefined ? payload.actual : '=IF(ISBLANK(D' + (logSheet.getLastRow() + 1) + '), 0, 1)',
       payload.stakeholder || 'Internal',
       payload.status || 'In Progress',
       payload.progress || 0,

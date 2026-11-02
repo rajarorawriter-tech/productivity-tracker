@@ -1,6 +1,29 @@
 # Daily & Hourly Tracker — Productivity Workbook
 
 A comprehensive, professional Single Source of Truth (SSOT) productivity tracking system designed for Google Sheets with Google Apps Script automation and Google Calendar integration.
+# Installation & Setup
+
+1. Open [Google Sheets](https://sheets.google.com) and create a new spreadsheet.
+2. Click on **Extensions > Apps Script**.
+3. Paste the contents of `Code.gs` into the script editor.
+ A remove all data in apps script first
+ B copy and paste everything from code.gs
+ C click on save (he icon that looks like a floppy disk)
+ D click on onOpen and choose setupMasterLogTracker
+ E Click on run (The play button next to the floppy disk button)
+ F click on review permission on the popup
+ F on the page that says "Google hasn’t verified this app" click on advanced then click on Go to Untitled project (unsafe) - because this is an untitle project we just created it has not been verified so this warning is normal and expected.
+ G Select what Untitled project can access - click on select all and then continue. - script will run and create the google sheet. 
+When you see execution completed go to step 4.
+4. Deploy as a Web App (Execute as: **Me**, Who has access: **Anyone**).
+ A Click on deploy  > New deployment - then a window will open Click on the button next to "select type" and then click on web app.
+ B Description : Productivity tracker , (Execute as: **Me**, Who has access: **Anyone**). Click on Deploy - click on authorise access - again select all and then continue. Copy web app url also the Deployment id.
+Then open tracker-app.html - click on connect google sheets 
+5. Copy the Web App URL and paste it into the web dashboard ("Connect Google Sheets") to automatically provision and sync your personal Google Sheet!
+
+After this close google sheets and use the tracker-app.html file to update details that you need. 
+We made google sheets as your database only. Nothing needs to be done in google sheets.
+
 
 ## ✨ Professional Design & Usability Features
 
@@ -24,10 +47,4 @@ A comprehensive, professional Single Source of Truth (SSOT) productivity trackin
    - Google Calendar integration (`scheduleFollowUpCalendarEvent()`).
    - Web App API endpoints (`doGet` / `doPost`) for bi-directional live sync with web dashboards.
 
-## Installation & Setup
-
-1. Open [Google Sheets](https://sheets.google.com) and create a new spreadsheet.
-2. Click on **Extensions > Apps Script**.
-3. Paste the contents of `Code.gs` into the script editor.
-4. Deploy as a Web App (Execute as: **Me**, Who has access: **Anyone**).
-5. Copy the Web App URL and paste it into the web dashboard ("Connect Google Sheets") to automatically provision and sync your personal Google Sheet!
+#
