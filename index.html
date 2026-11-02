@@ -1173,11 +1173,24 @@ function setupMasterLogTracker() {
         })
       });
 
+      showToast('Creating Apps Script deployment version...');
+      const verRes = await fetch(`https://script.googleapis.com/v1/projects/${scriptId}/versions`, {
+        method: 'POST',
+        headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ description: 'v1' })
+      });
+      const verData = await verRes.json();
+      const versionNumber = verData.versionNumber || 1;
+
       showToast('Deploying Web App API endpoint...');
       const deployRes = await fetch(`https://script.googleapis.com/v1/projects/${scriptId}/deployments`, {
         method: 'POST',
         headers: { 'Authorization': 'Bearer ' + token, 'Content-Type': 'application/json' },
-        body: JSON.stringify({ manifestFileName: 'appsscript', description: 'Web App Sync Deployment' })
+        body: JSON.stringify({
+          versionNumber: versionNumber,
+          manifestFileName: 'appsscript',
+          description: 'Web App Sync Deployment v1'
+        })
       });
       const deployData = await deployRes.json();
       const webAppUrl = deployData.entryPoint?.webApp?.url || `https://script.google.com/macros/s/${scriptId}/exec`;
