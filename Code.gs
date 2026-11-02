@@ -40,6 +40,7 @@ function doGet(e) {
   var data = rows.map(function(r, index) {
     return {
       id: index + 1,
+      rowIndex: index + 2,
       date: r[0] ? Utilities.formatDate(new Date(r[0]), Session.getScriptTimeZone(), "yyyy-MM-dd") : '',
       taskName: r[1] || '',
       category: r[2] || '',
@@ -62,7 +63,7 @@ function doGet(e) {
 }
 
 /**
- * Handles Web App POST requests to save new task entries directly into Master_Log.
+ * Handles Web App POST requests to save new task entries or delete entries in Master_Log.
  */
 function doPost(e) {
   try {
@@ -74,6 +75,40 @@ function doPost(e) {
     }
 
     var payload = JSON.parse(e.postData.contents);
+
+    if (payload.action === 'delete') {
+      var rowIndex = payload.rowIndex;
+      var lastRow = logSheet.getLastRow();
+
+      if (rowIndex && rowIndex >= 2 && rowIndex <= lastRow) {
+        logSheet.deleteRow(rowIndex);
+        return ContentService.createTextOutput(JSON.stringify({ status: 'success', message: 'Row deleted successfully' }))
+          .setMimeType(ContentService.MimeType.JSON);
+      } else {
+        var targetTask = payload.taskName;
+        var targetDate = payload.date;
+        var dataRange = logSheet.getDataRange().getValues();
+        var deleted = false;
+
+        for (var i = 1; i < dataRange.length; i++) {
+          var rowDate = dataRange[i][0] ? Utilities.formatDate(new Date(dataRange[i][0]), Session.getScriptTimeZone(), "yyyy-MM-dd") : '';
+          var rowTask = dataRange[i][1] || '';
+          if (rowTask === targetTask && (!targetDate || rowDate === targetDate)) {
+            logSheet.deleteRow(i + 1);
+            deleted = true;
+            break;
+          }
+        }
+
+        if (deleted) {
+          return ContentService.createTextOutput(JSON.stringify({ status: 'success', message: 'Row deleted by matching criteria' }))
+            .setMimeType(ContentService.MimeType.JSON);
+        } else {
+          return ContentService.createTextOutput(JSON.stringify({ status: 'error', message: 'Row not found for deletion' }))
+            .setMimeType(ContentService.MimeType.JSON);
+        }
+      }
+    }
 
     logSheet.appendRow([
       payload.date || new Date(),

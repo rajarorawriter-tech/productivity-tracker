@@ -955,6 +955,32 @@
   </div>
 </div>
 
+<!-- Delete Confirmation Modal -->
+<div class="modal-overlay" id="delete-modal">
+  <div class="modal">
+    <div class="modal-header">
+      <h3 class="modal-title" style="color: var(--danger);">Confirm Deletion</h3>
+      <button class="close-btn" onclick="closeDeleteModal()">&times;</button>
+    </div>
+    <div style="display:flex; flex-direction:column; gap:16px;">
+      <p style="color:var(--text); font-size:14px; font-weight: 500;">
+        Are you sure you want to delete this task?
+      </p>
+      <p style="color:var(--text-muted); font-size:13px;">
+        If yes, please type <strong style="color:var(--danger);">delete</strong> below — this cannot be reverted. This will also delete the log from Google Sheets.
+      </p>
+      <div class="form-group">
+        <label>Type "delete" to confirm</label>
+        <input type="text" id="delete-confirm-input" placeholder="Type delete here..." oninput="checkDeleteConfirmation(this)">
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button type="button" class="btn btn-secondary" onclick="closeDeleteModal()">Cancel</button>
+      <button type="button" id="confirm-delete-btn" class="btn" style="background: var(--danger); opacity: 0.6; cursor: not-allowed;" disabled onclick="executeDeleteEntry()">Delete Permanently</button>
+    </div>
+  </div>
+</div>
+
 <div id="toast"></div>
 
 <script>
@@ -1003,7 +1029,7 @@
       if (json.status === 'success' && Array.isArray(json.data)) {
         masterLogData = json.data;
         saveToStorage();
-        renderDashboard();
+        refreshActiveView();
         showToast('Successfully synced from Google Sheets!');
       } else {
         showToast('Sync failed: Invalid response from Google Sheets.');
@@ -1063,6 +1089,23 @@
     if (tabId === 'stakeholder_view') initStakeholderView();
     if (tabId === 'master_progress') renderMasterProgress();
     if (tabId === 'timeline_view') renderTimelineView();
+  }
+
+  function refreshActiveView() {
+    const activeTab = document.querySelector('.tab-pane.active');
+    if (!activeTab) {
+      renderDashboard();
+      return;
+    }
+    const id = activeTab.id.replace('tab-', '');
+    if (id === 'dashboard') renderDashboard();
+    else if (id === 'master_log') renderMasterLog();
+    else if (id === 'date_view') renderDateView();
+    else if (id === 'task_view') initTaskView();
+    else if (id === 'stakeholder_view') initStakeholderView();
+    else if (id === 'master_progress') renderMasterProgress();
+    else if (id === 'timeline_view') renderTimelineView();
+    else renderDashboard();
   }
 
   function toggleTheme() {
@@ -1225,15 +1268,75 @@
     saveToStorage();
     syncToGoogleSheets(newTask);
     closeModal();
-    renderDashboard();
+    refreshActiveView();
     showToast('Task update / entry saved & synced successfully!');
   }
 
+  let entryToDeleteId = null;
+
   function deleteEntry(id) {
-    masterLogData = masterLogData.filter(item => item.id !== id);
+    entryToDeleteId = id;
+    document.getElementById('delete-confirm-input').value = '';
+    const btn = document.getElementById('confirm-delete-btn');
+    btn.disabled = true;
+    btn.style.opacity = '0.6';
+    btn.style.cursor = 'not-allowed';
+    document.getElementById('delete-modal').classList.add('open');
+  }
+
+  function closeDeleteModal() {
+    document.getElementById('delete-modal').classList.remove('open');
+    entryToDeleteId = null;
+  }
+
+  function checkDeleteConfirmation(input) {
+    const val = input.value.trim().toLowerCase();
+    const btn = document.getElementById('confirm-delete-btn');
+    if (val === 'delete') {
+      btn.disabled = false;
+      btn.style.opacity = '1';
+      btn.style.cursor = 'pointer';
+    } else {
+      btn.disabled = true;
+      btn.style.opacity = '0.6';
+      btn.style.cursor = 'not-allowed';
+    }
+  }
+
+  function executeDeleteEntry() {
+    if (entryToDeleteId === null) return;
+    const entry = masterLogData.find(item => item.id === entryToDeleteId);
+
+    masterLogData = masterLogData.filter(item => item.id !== entryToDeleteId);
     saveToStorage();
-    renderDashboard();
-    showToast('Entry deleted');
+    refreshActiveView();
+    closeDeleteModal();
+    showToast('Entry deleted successfully');
+
+    if (entry && googleSheetsConfig.connected && googleSheetsConfig.url) {
+      syncDeleteToGoogleSheets(entry);
+    }
+  }
+
+  function syncDeleteToGoogleSheets(entry) {
+    const payload = {
+      action: 'delete',
+      rowIndex: entry.rowIndex || (entry.id + 1),
+      taskName: entry.taskName,
+      date: entry.date
+    };
+
+    fetch(googleSheetsConfig.url, {
+      method: 'POST',
+      mode: 'no-cors',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    }).then(() => {
+      showToast('Entry deleted from Google Sheets SSOT');
+    }).catch(err => {
+      console.error('Error deleting from Google Sheets:', err);
+      showToast('Deleted locally, but Google Sheets sync failed');
+    });
   }
 
   function getStatusBadge(status) {
